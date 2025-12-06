@@ -50,7 +50,7 @@ def get_trains():
                     arrival_est = arrival_est - datetime.timedelta(hours=5)
                     arrival_est = arrival_est.strftime('%H:%M')
                 else:
-                    arrival_est = "N/A"
+                    arrival_est = "-"
                 if update.stop_name == 'Grand Army Plaza':
                     input['grand_army_arrival'] = arrival_est
                     output[trip.direction]['trains_stopping_at_grand_army'] = True
