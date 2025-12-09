@@ -4,6 +4,7 @@ import html
 import pytz
 import requests
 from nyct_gtfs.feed import NYCTFeed
+from letterboxdpy import user as letterboxduser
 
 app = flask.Flask(__name__)
 
@@ -11,6 +12,12 @@ app = flask.Flask(__name__)
 def hello_world():
     return 'Hello, World!'
 
+# TODO: Import static LIRR data
+# TODO: Construct set of West/East Port Washington trains from Penn, Woodside, Bayside
+# TODO: Account for transfers at woodside ^
+# TODO: Construct set of West/East Atlantic Terminal <-> Jamaica Trains
+# TODO: Construct set of trips connecting 2/3 from GAP to Penn then LIRR to Bayside
+# TODO: Construct set of trips connecting 2/3 from GAP to Barclays then LIRR to Jamaica
 @app.route('/kpi/trains')
 def get_trains():
     output = {
@@ -103,6 +110,19 @@ def get_trains():
 # TODO: sort by start time (daily)
 @app.route('/kpi/screenings')
 def get_screenings():
+    highlight_movies = []
+    lb_user = letterboxduser.User('flynncredible')
+    lb_diary_entries = lb_user.get_diary()['entries']
+    for key in lb_diary_entries.keys():
+        entry = lb_diary_entries[key]
+        if entry['name'] not in highlight_movies:
+            highlight_movies.append(entry['name'])
+    lb_watchlist = lb_user.get_watchlist()['data']
+    for key in lb_watchlist.keys():
+        movie = lb_watchlist[key]
+        if movie['name'] not in highlight_movies:
+            highlight_movies.append(movie['name'])
+
     output = []
     screening_data = {}
     day = datetime.today()
@@ -164,7 +184,8 @@ def get_screenings():
                     'start_time': screening_data[detail['nid']]['start_time'],
                     'run_time': stripped_runtime,
                     'year': stripped_year,
-                    'note': html.unescape(screening_data[detail['nid']]['note'])
+                    'note': html.unescape(screening_data[detail['nid']]['note']),
+                    'highlight': html.unescape(clean_title.strip()) in highlight_movies
                 }
             )
         output.append(day_summary)
