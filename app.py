@@ -8,9 +8,20 @@ from letterboxdpy import user as letterboxduser
 
 app = flask.Flask(__name__)
 
-@app.route('/kpi/hello')
-def hello_world():
-    return 'Hello, World!'
+# TODO: add Hacker News scraper endpoint, return +500 point posts on top 5 pages
+#       also return <500 posts with +250 comments
+
+# TODO: add Wikipedia scraper endpoint, wiki article of the day / this day in history
+
+# TODO: add Bandsintown scraper, index against digitized music pref catalogue
+
+# TODO: add Moby-Dick API reader, do something fun with it
+
+# TODO: add Gizz Tapes RSS reader, alert to new shows posted
+
+@app.route('/')
+def health():
+    return 'KPI OK!'
 
 # TODO: Import static LIRR data
 # TODO: Construct set of West/East Port Washington trains from Penn, Woodside, Bayside
@@ -18,10 +29,11 @@ def hello_world():
 # TODO: Construct set of West/East Atlantic Terminal <-> Jamaica Trains
 # TODO: Construct set of trips connecting 2/3 from GAP to Penn then LIRR to Bayside
 # TODO: Construct set of trips connecting 2/3 from GAP to Barclays then LIRR to Jamaica
+# TODO: Create graphs of commutes to the above plus movie theaters along different lines
+# TODO: Add projected commute times onto metadata of listings in /screenings endpoint
 @app.route('/kpi/trains')
 def get_trains():
     output = {
-        'debug': len(NYCTFeed("2").trips),
         'N-23': {
             'trips': [],
             'trains_stopping_at_grand_army': False,
@@ -126,7 +138,74 @@ def get_screenings():
     output = []
     screening_data = {}
     day = datetime.today()
-    for x in range(8):
+
+    # TODO: DRY this out with helper
+    # First day, idk why it has to be separate - TODO: fix later
+    daystring = day.strftime('%Y%m%d')
+    screenings = requests.get(f'https://www.screenslate.com/api/screenings/date?_format=json&date={daystring}&field_city_target_id=10969').json()
+    nids = ""
+    for screening in screenings:
+        nid = screening['nid']
+        screening_data[nid] = {
+            'start_time': screening['field_time'],
+            'note': screening['field_note']
+        }
+        nids += f'{nid}+'
+    nids = nids[:-1]
+    screening_details = requests.get(f'https://www.screenslate.com/api/screenings/id/{nids}?_format=json').json()
+    day_summary = {
+        'day': day.strftime('%A, %B %-d'),
+        'screenings': []
+    }
+    for detail in screening_details:
+        stripped_title = detail['media_title_labels'].split('>')
+        if len(stripped_title) == 1:
+            clean_title = stripped_title[0]
+        else:
+            clean_title = stripped_title[1].split('<')[0]
+        if clean_title == '' or clean_title == None:
+            clean_title = detail['title']
+        
+        stripped_venue_title = detail['venue_title'].split('>')
+        if len(stripped_venue_title) == 1:
+            clean_venue_title = stripped_venue_title[0]
+        else:
+            clean_venue_title = stripped_venue_title[1].split('<')[0]
+
+        if len(detail['media_title_info'].split('<span>')) >= 4:
+            stripped_director = detail['media_title_info'].split('<span>')[1].split('</span>')[0].replace('\\n','')
+            stripped_year = detail['media_title_info'].split('<span>')[2].split('</span>')[0]
+            stripped_runtime = detail['media_title_info'].split('<span>')[3].split('</span>')[0]
+            stripped_format = detail['media_title_info'].split('<span>')[-1].split('</span>')[0]
+            title_info = detail['media_title_info']
+            if stripped_format == stripped_runtime or stripped_format == stripped_year:
+                stripped_format = '-'
+        else:
+            stripped_director = '-'
+            stripped_year = '-'
+            stripped_runtime = '-'
+            stripped_format = '-'
+            
+
+        day_summary['screenings'].append(
+            {
+                'title': html.unescape(clean_title.strip()),
+                'director': html.unescape(stripped_director.strip()),
+                'venue_title': html.unescape(clean_venue_title.strip()),
+                'format': detail['media_title_format'] or stripped_format,
+                'link': detail['field_url'],
+                'start_time': screening_data[detail['nid']]['start_time'],
+                'run_time': stripped_runtime,
+                'year': stripped_year,
+                'note': html.unescape(screening_data[detail['nid']]['note']),
+                'highlight': html.unescape(clean_title.strip()) in highlight_movies
+            }
+        )
+        sorted_screenings = sorted(day_summary['screenings'], key=lambda screening: datetime.strptime(screening['start_time'], '%H:%M''%p') if ':' in screening['start_time'] else datetime.strptime(screening['start_time'], '%H''%p'))
+        day_summary['screenings'] = sorted_screenings
+    output.append(day_summary)
+
+    for x in range(4):
         day = day + timedelta(days=1)
         daystring = day.strftime('%Y%m%d')
         screenings = requests.get(f'https://www.screenslate.com/api/screenings/date?_format=json&date={daystring}&field_city_target_id=10969').json()
