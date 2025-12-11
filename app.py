@@ -4,6 +4,7 @@ import html
 import pytz
 import requests
 from nyct_gtfs.feed import NYCTFeed
+from requests.adapters import HTTPAdapter, Retry
 from letterboxdpy import user as letterboxduser
 
 app = flask.Flask(__name__)
@@ -119,7 +120,6 @@ def get_trains():
     return response
 
 # TODO: de-dupe some screenings in favor of the one with more metadata
-# TODO: sort by start time (daily)
 @app.route('/kpi/screenings')
 def get_screenings():
     highlight_movies = []
@@ -274,3 +274,61 @@ def get_screenings():
     response = flask.jsonify(output)
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
+
+# TODO: Allow loading of subsequent pages / add timestamps / comments / other metadata?
+@app.route('/kpi/hacker-news')
+def get_hacker_news():
+    s = requests.Session()
+    retries = Retry(total=5,
+                backoff_factor=0.1,
+                status_forcelist=[ 500, 502, 503, 504 ])
+    s.mount('https://', HTTPAdapter(max_retries=retries))
+
+    output = []
+    top_stories = s.get('https://hacker-news.firebaseio.com/v0/topstories.json').json()
+    limit = 25
+    count = 0
+    for story in top_stories:
+        if count < limit:
+            story_data = s.get(f'https://hacker-news.firebaseio.com/v0/item/{story}.json').json()
+            if story_data['type'] == 'job':
+                continue
+            score = story_data['score']
+            if score < 250:
+                continue
+            title = story_data['title']
+            url = story_data['url'] if 'url' in story_data.keys() else None
+            comments = 131
+            shortened_url = url if url == None else story_data['url'].split('/')[2].replace('www.','')
+            output.append(
+                {
+                    'title': title,
+                    'url': url,
+                    'shortened_url': f'({shortened_url})',
+                    'comments_link': f'https://news.ycombinator.com/item?id={story}',
+                    'score': score,
+                    'comments': comments
+                }
+            )
+            count += 1
+    response = flask.jsonify(output)
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+
+# TODO: auth bearer token grabbing
+# TODO: secret handling to get bearer token (research in Render)
+# @app.route('/kpi/wiki')
+# def get_wiki():
+#     today = datetime.now()
+#     date = today.strftime('%Y/%m/%d')
+#     language_code = 'en' # English
+
+#     headers = {
+#     'Authorization': 'Bearer YOUR_ACCESS_TOKEN',
+#     'User-Agent': 'kpi (kevin.flynn@hey.com)'
+#     }
+
+#     base_url = 'https://api.wikimedia.org/feed/v1/wikipedia/'
+#     url = base_url + language_code + '/featured/' + date
+#     response = requests.get(url, headers=headers)
