@@ -11,6 +11,8 @@ import json
 
 app = flask.Flask(__name__)
 
+# TODO: move these to a config setup file and make local/deployed environment or config specific
+
 # LOCAL REDIS BACKUP FOR TESTING
 # app.config['REDIS_URL'] = "redis://localhost:6379/0"
 
@@ -21,7 +23,6 @@ app = flask.Flask(__name__)
 app.config['REDIS_URL'] = 'redis://red-d4udg92li9vc73d3dq5g:6379'
 redis_client = redis.from_url(app.config['REDIS_URL'])
 
-# TODO: add daily / half hourly cache refresh cron jobs on screenings and news
 # TODO: add Bluesky trending topics endpoint, get top stories in US, Ireland, and Globally
 # TODO: add Wikipedia scraper endpoint, wiki article of the day / this day in history
 # TODO: add Bandsintown scraper, index against digitized music pref catalogue
@@ -163,8 +164,7 @@ def get_trains():
     feed_1_2_3 = NYCTFeed("2")
     sorted_trips = sorted(feed_1_2_3.trips, key=lambda trip: trip.stop_time_updates[-1].arrival)
     for trip in sorted_trips:
-        # pre-sorting
-        # for trip in feed_1_2_3.trips:
+        # sorting rides by by stops
         input = {
             "summary": str(trip)
         }
@@ -223,6 +223,7 @@ def get_trains():
     return response
 
 # TODO: de-dupe some screenings in favor of the one with more metadata
+# TODO: make it so letterboxd overlay can be recached instantly even though screenings are daily
 def get_screenings():
     highlight_movies = []
     lb_user = letterboxduser.User('flynncredible')
@@ -378,6 +379,7 @@ def get_screenings():
     return response
 
 # TODO: Allow loading of subsequent pages / add timestamps / comments / other metadata?
+# TODO: genericize max retries logic to all endpoints
 def get_hacker_news():
     s = requests.Session()
     retries = Retry(total=5,
