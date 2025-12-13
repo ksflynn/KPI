@@ -1,5 +1,5 @@
 import flask
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import html
 import pytz
 import requests
@@ -46,7 +46,7 @@ def get_cached_result(key, refresh_only=False):
     if key == 'trains':
         # check if key exists with timestamp of -1 minute
         # if not, get fresh query
-        time = datetime.now() - timedelta(minutes=1)
+        time = (datetime.now(timezone(timedelta(hours=-5))) - timedelta(minutes=1))
         datestring = time.strftime('%Y-%m-%d %H:%M')
         readable_datestring = time.strftime('%m/%d/%Y %H:%M')
         minutewise_trains_key = f'{key}_{datestring}'
@@ -78,7 +78,7 @@ def get_cached_result(key, refresh_only=False):
         # check if key exists from top of hour
         # TODO: make more clever solution to always get most recent half hour, compare minute vals
         # if not, get fresh query
-        time = datetime.now().replace(minute=0)
+        time = (datetime.now(timezone(timedelta(hours=-5))).replace(minute=0))
         datestring = time.strftime('%Y-%m-%d %H:%M')
         readable_datestring = time.strftime('%m/%d/%Y %H:%M')
 
