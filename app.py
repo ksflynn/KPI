@@ -1,5 +1,6 @@
 import flask
 from datetime import datetime, timedelta, timezone
+from math import floor
 import html
 import pytz
 import requests
@@ -12,6 +13,7 @@ import json
 app = flask.Flask(__name__)
 
 # TODO: move these to a config setup file and make local/deployed environment or config specific
+# TODO: break up endpoints for each view into their own files
 
 # LOCAL REDIS BACKUP FOR TESTING
 # app.config['REDIS_URL'] = "redis://localhost:6379/0"
@@ -43,7 +45,7 @@ def kpi_ok():
 def health_check():
     return '', 200
 
-def get_cached_result(key, refresh_only=False):
+def get_cached_result(key, refresh_only=False, skip_cache=False):
     if key == 'trains':
         # check if key exists with timestamp of -1 minute
         # if not, get fresh query
@@ -52,7 +54,7 @@ def get_cached_result(key, refresh_only=False):
         readable_datestring = time.strftime('%m/%d/%Y %H:%M')
         minutewise_trains_key = f'{key}_{datestring}'
         cached_result = redis_client.get(minutewise_trains_key)
-        if cached_result is None:
+        if cached_result is None or skip_cache:
             for expired_key in redis_client.scan_iter(f'{key}_*'):
                 redis_client.delete(expired_key)
             new_result = get_trains().json
@@ -67,7 +69,7 @@ def get_cached_result(key, refresh_only=False):
         readable_datestring = datetime.now().strftime('%m/%d/%Y')
         daily_screenings_key = f'{key}_{datestring}'
         cached_result = redis_client.get(daily_screenings_key)
-        if cached_result is None:
+        if cached_result is None or skip_cache:
             for expired_key in redis_client.scan_iter(f'{key}_*'):
                 redis_client.delete(expired_key)
             new_result = get_screenings().json
@@ -85,12 +87,28 @@ def get_cached_result(key, refresh_only=False):
 
         hourly_hacker_news_key = f'{key}_{datestring}'
         cached_result = redis_client.get(hourly_hacker_news_key)
-        if cached_result is None:
+        if cached_result is None or skip_cache:
             for expired_key in redis_client.scan_iter(f'{key}_*'):
                 redis_client.delete(expired_key)
             new_result = get_hacker_news().json
             new_result_bytes = json.dumps(new_result).encode('utf-8')
             redis_client.set(hourly_hacker_news_key, new_result_bytes)
+        else:
+            cached_result = json.loads(cached_result.decode('utf-8'))
+    elif key == 'bluesky':
+        minutes = floor(datetime.now().minute/10) * 10
+        time = datetime.now(timezone(timedelta(hours=-5))).replace(minute=minutes)
+        datestring = time.strftime('%Y-%m-%d %H:%M')
+        readable_datestring = time.strftime('%m/%d/%Y %H:%M')
+
+        ten_min_bluesky_key = f'{key}_{datestring}'
+        cached_result = redis_client.get(ten_min_bluesky_key)
+        if cached_result is None or skip_cache:
+            for expired_key in redis_client.scan_iter(f'{key}_*'):
+                redis_client.delete(expired_key)
+            new_result = get_bluesky_trending().json
+            new_result_bytes = json.dumps(new_result).encode('utf-8')
+            redis_client.set(ten_min_bluesky_key, new_result_bytes)
         else:
             cached_result = json.loads(cached_result.decode('utf-8'))
 
@@ -117,6 +135,27 @@ def get_screenings_from_cache_or_live():
 @app.route('/kpi/hacker-news')
 def get_hacker_news_from_cache_or_live():
     return get_cached_result('hacker-news')
+
+@app.route('/kpi/bluesky')
+def get_bluesky_trends_from_cache_or_live():
+    return get_cached_result('bluesky')
+    #return get_bluesky_trending()
+
+@app.route('/kpi/trains/debug')
+def get_trains_debug():
+    return get_cached_result('trains', skip_cache=True)
+
+@app.route('/kpi/screenings/debug')
+def get_screenings_debug():
+    return get_cached_result('screenings', skip_cache=True)
+
+@app.route('/kpi/hacker-news/debug')
+def get_hacker_news_debug():
+    return get_cached_result('hacker-news', skip_cache=True)
+
+@app.route('/kpi/bluesky/debug')
+def get_bluesky_trends_debug():
+    return get_cached_result('bluesky', skip_cache=True)
 
 # TODO: add daily refresh job on cron-job.org
 @app.route('/kpi/screenings/refresh')
@@ -304,8 +343,8 @@ def get_screenings():
                 'highlight': html.unescape(clean_title.strip()) in highlight_movies
             }
         )
-        sorted_screenings = sorted(day_summary['screenings'], key=lambda screening: datetime.strptime(screening['start_time'], '%H:%M''%p') if ':' in screening['start_time'] else datetime.strptime(screening['start_time'], '%H''%p'))
-        day_summary['screenings'] = sorted_screenings
+    sorted_screenings = sorted(day_summary['screenings'], key=lambda screening: datetime.strptime(screening['start_time'], '%H:%M''%p') if ':' in screening['start_time'] else datetime.strptime(screening['start_time'], '%H''%p'))
+    day_summary['screenings'] = sorted_screenings
     output.append(day_summary)
 
     for x in range(4):
@@ -414,6 +453,18 @@ def get_hacker_news():
                 }
             )
             count += 1
+    response = flask.jsonify(output)
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    return response
+
+def get_bluesky_trending():
+    output = []
+    trending_topics = requests.get('https://bluecrawler.com/api/get-trending').json()
+    for topic in trending_topics['data']['hashTags']:
+        output.append({
+            'topic': topic,
+            'link': f'bsky.app/hashtag/{topic}'
+        })
     response = flask.jsonify(output)
     response.headers.add('Access-Control-Allow-Origin', '*')
     return response
